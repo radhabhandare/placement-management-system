@@ -55,8 +55,15 @@ class User(AbstractBaseUser, PermissionsMixin):
     failed_login_attempts = models.IntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
 
+    # Activation token (unique per user — for account approval)
     activation_token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     activation_token_created = models.DateTimeField(auto_now_add=True)
+
+    # Password reset token (separate from activation)
+    # NOTE: unique=True is temporarily removed for migration.
+    #       It will be re-added in a follow-up migration.
+    reset_token = models.UUIDField(default=uuid.uuid4, editable=False)
+    reset_token_created = models.DateTimeField(auto_now=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

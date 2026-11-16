@@ -125,3 +125,24 @@ def send_status_update_email(application, new_status):
         ),
         [application.student.user.email],
     )
+
+
+def send_password_reset_email(user):
+    """
+    Sent when a user requests a password reset.
+    Contains a one-time reset link. Plain-text passwords are never emailed.
+    """
+    reset_url = f"{settings.FRONTEND_URL}/reset-password/{user.reset_token}"
+    send_plain_email(
+        "Password Reset - Placement Portal",
+        (
+            f"Hi {user.first_name},\n\n"
+            f"We received a request to reset your password.\n\n"
+            f"Click the link below to set a new password:\n"
+            f"{reset_url}\n\n"
+            f"This link will expire in 24 hours. If you didn't request this, "
+            f"you can ignore this email — your current password is still valid.\n\n"
+            f"- Placement Cell"
+        ),
+        [user.email],
+    )

@@ -9,6 +9,10 @@ urlpatterns = [
     path('activate/<uuid:token>/', views.ActivateAccountView.as_view(), name='activate'),
     path('me/', views.MeView.as_view(), name='me'),
 
+    # ----- Password reset (NEW) -----
+    path('forgot-password/', views.ForgotPasswordView.as_view(), name='forgot-password'),
+    path('reset-password/<uuid:token>/', views.ResetPasswordView.as_view(), name='reset-password'),
+
     # ----- Profile -----
     path('profile/', views.ProfileView.as_view(), name='profile'),
     path('profile/photo/', views.UploadPhotoView.as_view(), name='upload-photo'),

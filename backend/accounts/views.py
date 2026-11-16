@@ -1,4 +1,8 @@
 # backend/accounts/views.py
+import uuid
+import logging
+from datetime import timedelta
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -7,7 +11,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.shortcuts import get_object_or_404
 from django.conf import settings
-import logging
+from django.utils import timezone
 
 from .models import (
     User, StudentProfile, Education, StudentSkill, StudentSoftSkill,
@@ -22,6 +26,7 @@ from .serializers import (
 from .permissions import IsApprovedStudent, IsAdminRole
 from .utils import (
     send_registration_email, send_approval_email, send_rejection_email,
+    send_password_reset_email,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,14 +54,12 @@ class RegisterView(APIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        # Log what's about to happen (helps debugging)
         logger.info(
             f"[REGISTER] Created user {user.email} "
             f"(reg={user.registration_number}, status=PENDING). "
             f"Sending confirmation to {user.email}..."
         )
 
-        # Real email send (fails silently, logs error)
         send_registration_email(user)
 
         return Response(
@@ -181,7 +184,92 @@ class MeView(APIView):
 
 
 # ==================================================================
-# 2. STUDENT PROFILE
+# 2. PASSWORD RESET (public)
+# ==================================================================
+class ForgotPasswordView(APIView):
+    """
+    POST /api/auth/forgot-password/
+    Body: { "email": "student@example.com" }
+
+    Always returns the same message whether the email exists or not.
+    This prevents attackers from probing which emails are registered.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = (request.data.get('email') or '').strip().lower()
+        if not email:
+            return Response({'error': 'Email is required.'}, status=400)
+
+        try:
+            user = User.objects.get(email__iexact=email)
+        except User.DoesNotExist:
+            # Do NOT reveal whether the email exists
+            return Response({
+                'message': 'If this email is registered, a password reset link has been sent.'
+            })
+
+        # Only allow reset for approved + active accounts
+        if user.status != 'APPROVED' or not user.is_active:
+            return Response({
+                'message': 'If this email is registered, a password reset link has been sent.'
+            })
+
+        # Regenerate token to invalidate any old reset links
+        user.reset_token = uuid.uuid4()
+        user.reset_token_created = timezone.now()
+        user.save(update_fields=['reset_token', 'reset_token_created'])
+
+        logger.info(f"[FORGOT-PW] Reset link sent to {user.email}")
+        send_password_reset_email(user)
+
+        return Response({
+            'message': 'If this email is registered, a password reset link has been sent.'
+        })
+
+
+class ResetPasswordView(APIView):
+    """
+    POST /api/auth/reset-password/<uuid>/
+    Body: { "password": "...", "confirm_password": "..." }
+
+    Validates token, checks expiry (24h), sets new password.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, token):
+        password = request.data.get('password', '')
+        confirm = request.data.get('confirm_password', '')
+
+        if len(password) < 8:
+            return Response({'error': 'Password must be at least 8 characters.'}, status=400)
+        if password != confirm:
+            return Response({'error': 'Passwords do not match.'}, status=400)
+
+        try:
+            user = User.objects.get(reset_token=token)
+        except User.DoesNotExist:
+            return Response({'error': 'Invalid or expired reset link.'}, status=400)
+
+        # 24-hour expiry
+        if user.reset_token_created < timezone.now() - timedelta(hours=24):
+            return Response({'error': 'Reset link has expired. Please request a new one.'}, status=400)
+
+        user.set_password(password)
+        # Rotate token so the link can't be reused
+        user.reset_token = uuid.uuid4()
+        user.reset_token_created = timezone.now()
+        # Unlock account in case they were locked out for failed attempts
+        user.failed_login_attempts = 0
+        user.locked_until = None
+        user.save()
+
+        logger.info(f"[RESET-PW] Password reset completed for {user.email}")
+        return Response({'message': 'Password reset successful. You can now log in.'})
+
+
+# ==================================================================
+# 3. STUDENT PROFILE
 # ==================================================================
 class ProfileView(APIView):
     permission_classes = [IsApprovedStudent]
@@ -407,7 +495,7 @@ class ExperienceDetail(APIView):
 
 
 # ==================================================================
-# 3. ADMIN — student management
+# 4. ADMIN — student management
 # ==================================================================
 class AdminStudentListView(APIView):
     permission_classes = [IsAdminRole]

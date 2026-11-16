@@ -200,8 +200,8 @@ export default function Landing() {
             <div className="col-md-3">
               <h6 className="text-white">Contact</h6>
               <p className="small mb-0">
-                <i className="bi bi-envelope me-1"></i>placement@college.edu<br />
-                <i className="bi bi-telephone me-1"></i>+91 9876543210
+                <i className="bi bi-envelope me-1"></i>placement@gmail<br />
+                <i className="bi bi-telephone me-1"></i>+91 8625948481
               </p>
             </div>
           </div>
